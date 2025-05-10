@@ -1,7 +1,0 @@
-streamlit
-pytesseract
-pdf2image
-langdetect
-python-docx
-reportlab
-Pillow
