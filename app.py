@@ -7,10 +7,11 @@ import pytesseract
 from langdetect import detect
 from docx import Document
 from pdf2image import convert_from_path
+import img2pdf
 
-# Configurazione Tesseract per macOS
-pytesseract.pytesseract.tesseract_cmd = '/opt/homebrew/bin/tesseract'
-os.environ['TESSDATA_PREFIX'] = '/opt/homebrew/share/tessdata'
+# Configura Tesseract per Render/macOS/Docker
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # o '/opt/homebrew/bin/tesseract' se locale Mac
+os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/5/tessdata'
 
 st.set_page_config(page_title="OCR PDF Converter", layout="centered")
 st.title("📄 OCR PDF Converter")
@@ -25,53 +26,46 @@ if uploaded_file:
         f.write(uploaded_file.read())
 
     with st.spinner("🧠 Conversione OCR in corso..."):
-
         try:
             if file_ext in ["png", "jpg", "jpeg"]:
-                # Converti immagine in PDF
+                # Converti immagine in PDF con img2pdf
                 temp_pdf = f"{uuid.uuid4()}.pdf"
-                subprocess.run(["img2pdf", temp_input, "-o", temp_pdf], check=True)
+                with open(temp_pdf, "wb") as f:
+                    f.write(img2pdf.convert(temp_input))
+                input_pdf = temp_pdf
+            else:
+                input_pdf = temp_input
 
-                # OCR invisibile su PDF generato
-                output_pdf = f"{uuid.uuid4()}_ocr.pdf"
-                subprocess.run([
-                    "ocrmypdf",
-                    "--language", "eng",
-                    "--output-type", "pdfa",
-                    "--skip-text",
-                    temp_pdf,
-                    output_pdf
-                ], check=True)
+            output_pdf = f"{uuid.uuid4()}_ocr.pdf"
 
-                with open(output_pdf, "rb") as f:
-                    st.success("✅ Conversione completata con successo!")
-                    st.download_button("📥 Scarica PDF selezionabile", f, file_name="output.pdf")
+            # OCR completo anche se il PDF ha già testo
+            subprocess.run([
+                "ocrmypdf",
+                "--language", "eng",
+                "--output-type", "pdfa",
+                input_pdf,
+                output_pdf
+            ], check=True)
 
-                os.remove(temp_pdf)
-                os.remove(output_pdf)
+            # Mostra il PDF finale
+            with open(output_pdf, "rb") as f:
+                st.success("✅ Conversione completata con successo!")
+                st.download_button("📥 Scarica PDF selezionabile", f, file_name="output.pdf")
 
-            elif file_ext == "pdf":
-                # OCR diretto su PDF caricato
-                output_pdf = f"{uuid.uuid4()}_ocr.pdf"
-                subprocess.run([
-                    "ocrmypdf",
-                    "--language", "eng",
-                    "--output-type", "pdfa",
-                    "--skip-text",
-                    temp_input,
-                    output_pdf
-                ], check=True)
-
-                with open(output_pdf, "rb") as f:
-                    st.success("✅ Conversione completata con successo!")
-                    st.download_button("📥 Scarica PDF selezionabile", f, file_name="output.pdf")
-
-                os.remove(output_pdf)
+        except subprocess.CalledProcessError as e:
+            if e.returncode == 3:
+                st.warning("ℹ️ Il PDF conteneva già testo, ma è stato comunque processato.")
+                if os.path.exists(output_pdf):
+                    with open(output_pdf, "rb") as f:
+                        st.download_button("📥 Scarica PDF (testo già presente)", f, file_name="output.pdf")
+            else:
+                st.error(f"❌ Errore durante la conversione: {e}")
 
         except Exception as e:
-            st.error(f"❌ Errore durante la conversione: {e}")
+            st.error(f"❌ Errore imprevisto: {e}")
 
         finally:
-            if os.path.exists(temp_input):
-                os.remove(temp_input)
-
+            # Pulisci file temporanei
+            for f in [temp_input, input_pdf, output_pdf]:
+                if os.path.exists(f):
+                    os.remove(f)
