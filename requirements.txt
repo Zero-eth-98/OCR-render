@@ -1,7 +1,8 @@
 streamlit
 pytesseract
 pdf2image
+img2pdf
 langdetect
 python-docx
 reportlab
-Pillow
+pillow
