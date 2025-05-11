@@ -1,99 +1,86 @@
 import streamlit as st
-import os
-import uuid
-import subprocess
-from PIL import Image
-import pytesseract
-from langdetect import detect
-from docx import Document
+from PIL import Image, UnidentifiedImageError
 from pdf2image import convert_from_path
-import img2pdf
+from docx import Document
+import pytesseract
+import uuid
+import os
 
-# ✅ CONFIG STREAMLIT UI
-st.set_page_config(
-    page_title="SDB Tools – OCR Converter",
-    page_icon="📄",
-    layout="centered"
+st.set_page_config(page_title="OCR Converter", layout="centered")
+st.title("🧠 OCR Converter")
+st.markdown("Carica **uno o più file** immagine o PDF. Il sistema rileverà automaticamente la lingua e ti permetterà di scaricare il risultato nel formato scelto.")
+
+uploaded_files = st.file_uploader(
+    "Trascina qui i file",
+    type=["pdf", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "pbm", "ppm"],
+    accept_multiple_files=True
 )
 
-# ✅ STILE COERENTE CON SDBTOOLS
-st.markdown("""
-    <style>
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            max-width: 700px;
-        }
-        .stButton>button {
-            background-color: #0ea5e9;
-            color: white;
-            border: none;
-            padding: 0.5rem 1.2rem;
-            border-radius: 8px;
-            font-size: 1rem;
-        }
-        .stButton>button:hover {
-            background-color: #0284c7;
-        }
-        footer {visibility: hidden;}
-    </style>
-""", unsafe_allow_html=True)
+output_format = st.selectbox("📤 Seleziona formato di output", ("PDF", "TXT", "DOCX"))
 
-# ✅ INTERFACCIA
-st.title("🧠 OCR PDF Converter – SDB Tools")
-st.write("Carica un'immagine o un PDF per estrarre testo selezionabile. Conversione diretta in PDF.")
+if uploaded_files:
+    progress = st.progress(0)
+    status = st.empty()
+    preview = st.empty()
 
-# ✅ TESSERACT PATH
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
-os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/5/tessdata'
+    for idx, file in enumerate(uploaded_files):
+        file_ext = file.name.split('.')[-1].lower()
+        temp_input = f"temp_{uuid.uuid4()}.{file_ext}"
 
-# ✅ UPLOAD FILE
-uploaded_file = st.file_uploader("📎 Carica un file immagine o PDF", type=["pdf", "png", "jpg", "jpeg"])
+        with open(temp_input, "wb") as f:
+            f.write(file.read())
 
-# ✅ OCR
-if uploaded_file:
-    file_ext = uploaded_file.name.split('.')[-1].lower()
-    temp_input = f"{uuid.uuid4()}.{file_ext}"
-    with open(temp_input, "wb") as f:
-        f.write(uploaded_file.read())
+        text = ""
+        images = []
 
-    with st.spinner("🧠 Conversione OCR in corso..."):
         try:
-            if file_ext in ["png", "jpg", "jpeg"]:
-                temp_pdf = f"{uuid.uuid4()}.pdf"
-                with open(temp_pdf, "wb") as f:
-                    f.write(img2pdf.convert(temp_input))
-                input_pdf = temp_pdf
+            if file_ext == "pdf":
+                images = convert_from_path(temp_input, dpi=200)
             else:
-                input_pdf = temp_input
+                img = Image.open(temp_input).convert("RGB")  # compressione automatica
+                images = [img]
 
-            output_pdf = f"{uuid.uuid4()}_ocr.pdf"
+        except UnidentifiedImageError:
+            st.error(f"❌ Impossibile aprire il file: {file.name}")
+            continue
 
-            subprocess.run([
-                "ocrmypdf",
-                "--language", "eng",
-                "--output-type", "pdfa",
-                input_pdf,
-                output_pdf
-            ], check=True)
+        total = len(images)
+        for i, img in enumerate(images):
+            text += pytesseract.image_to_string(img)
+            percent = int(((idx + i / total) / len(uploaded_files)) * 100)
+            progress.progress(percent)
+            preview.text(f"📄 Anteprima testo ({file.name}):
 
-            with open(output_pdf, "rb") as f:
-                st.success("✅ Conversione completata con successo!")
-                st.download_button("📥 Scarica PDF selezionabile", f, file_name="output.pdf")
+{text[:500]}...")
 
-        except subprocess.CalledProcessError as e:
-            if e.returncode == 3:
-                st.warning("ℹ️ Il PDF conteneva già testo, ma è stato comunque processato.")
-                if os.path.exists(output_pdf):
-                    with open(output_pdf, "rb") as f:
-                        st.download_button("📥 Scarica PDF (testo già presente)", f, file_name="output.pdf")
-            else:
-                st.error(f"❌ Errore durante la conversione: {e}")
+        file_base = f"{uuid.uuid4()}"
 
-        except Exception as e:
-            st.error(f"❌ Errore imprevisto: {e}")
+        if output_format == "PDF":
+            pdf_output = f"{file_base}.pdf"
+            images[0].save(pdf_output, save_all=True, append_images=images[1:])
+            with open(pdf_output, "rb") as f:
+                st.download_button(f"📥 Scarica PDF per {file.name}", f, file_name=f"{file.name}_output.pdf")
+            os.remove(pdf_output)
 
-        finally:
-            for f in [temp_input, input_pdf, output_pdf]:
-                if os.path.exists(f):
-                    os.remove(f)
+        elif output_format == "TXT":
+            txt_output = f"{file_base}.txt"
+            with open(txt_output, "w", encoding="utf-8") as f:
+                f.write(text)
+            with open(txt_output, "rb") as f:
+                st.download_button(f"📥 Scarica TXT per {file.name}", f, file_name=f"{file.name}_output.txt")
+            os.remove(txt_output)
+
+        elif output_format == "DOCX":
+            doc = Document()
+            doc.add_paragraph(text)
+            docx_output = f"{file_base}.docx"
+            doc.save(docx_output)
+            with open(docx_output, "rb") as f:
+                st.download_button(f"📥 Scarica DOCX per {file.name}", f, file_name=f"{file.name}_output.docx")
+            os.remove(docx_output)
+
+        os.remove(temp_input)
+
+    progress.empty()
+    status.success("✅ Tutti i file elaborati con successo!")
+    preview.empty()
