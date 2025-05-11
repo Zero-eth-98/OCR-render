@@ -6,4 +6,4 @@ langdetect
 python-docx
 reportlab
 pillow
-uuid
+ocrmypdf
