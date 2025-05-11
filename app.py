@@ -5,16 +5,14 @@ from docx import Document
 import pytesseract
 import uuid
 import os
+import time
 
 st.set_page_config(page_title="OCR Converter", layout="centered")
 st.title("🧠 OCR Converter")
-st.markdown("""
-Carica **uno o più file** immagine o PDF. Il sistema rileverà automaticamente la lingua
-e ti permetterà di scaricare il risultato nel formato scelto.
-""")
+st.markdown("Carica **uno o più file** immagine o PDF. Il sistema rileverà automaticamente la lingua e ti permetterà di scaricare il risultato nel formato scelto.")
 
 uploaded_files = st.file_uploader(
-    "Trascina qui i file",
+    "Trascina qui i file o clicca per selezionare",
     type=["pdf", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "pbm", "ppm"],
     accept_multiple_files=True
 )
@@ -22,6 +20,15 @@ uploaded_files = st.file_uploader(
 output_format = st.selectbox("📤 Seleziona formato di output", ("PDF", "TXT", "DOCX"))
 
 if uploaded_files:
+    # Fase 1: Simulazione caricamento
+    st.markdown("### 📂 Caricamento file in corso...")
+    load_bar = st.progress(0)
+    for i in range(100):
+        load_bar.progress(i + 1)
+        time.sleep(0.005)
+    load_bar.empty()
+    st.success("✅ File caricati correttamente.")
+
     if st.button("🚀 Avvia OCR"):
         progress = st.progress(0)
         status = st.empty()
@@ -43,7 +50,6 @@ if uploaded_files:
                 else:
                     img = Image.open(temp_input).convert("RGB")
                     images = [img]
-
             except UnidentifiedImageError:
                 st.error(f"❌ Impossibile aprire il file: {file.name}")
                 continue
@@ -53,6 +59,7 @@ if uploaded_files:
                 text += pytesseract.image_to_string(img)
                 percent = int(((idx + i / total) / len(uploaded_files)) * 100)
                 progress.progress(percent)
+                status.info(f"🧠 Sto convertendo: {file.name} ({percent}%)")
                 preview.text(f"📄 Anteprima testo ({file.name}): {text[:500]}...")
 
             file_base = f"{uuid.uuid4()}"
