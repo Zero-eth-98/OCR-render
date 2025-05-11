@@ -18,7 +18,8 @@ uploaded_files = st.file_uploader(
 
 output_format = st.selectbox("📤 Seleziona formato di output", ("PDF", "TXT", "DOCX"))
 
-if uploaded_files:
+# 👉 Bottone per avviare la conversione
+if uploaded_files and st.button("🚀 Avvia OCR"):
     progress = st.progress(0)
     status = st.empty()
     preview = st.empty()
