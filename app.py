@@ -5,14 +5,15 @@ from docx import Document
 import pytesseract
 import uuid
 import os
-import time
+import io
+import zipfile
 
 st.set_page_config(page_title="OCR Converter", layout="centered")
 st.title("🧠 OCR Converter")
 st.markdown("Carica **uno o più file** immagine o PDF. Il sistema rileverà automaticamente la lingua e ti permetterà di scaricare il risultato nel formato scelto.")
 
 uploaded_files = st.file_uploader(
-    "Trascina qui i file o clicca per selezionare",
+    "Trascina qui i file o clicca per selezionarli",
     type=["pdf", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "tif", "pbm", "ppm"],
     accept_multiple_files=True
 )
@@ -20,76 +21,55 @@ uploaded_files = st.file_uploader(
 output_format = st.selectbox("📤 Seleziona formato di output", ("PDF", "TXT", "DOCX"))
 
 if uploaded_files:
-    # Fase 1: Simulazione caricamento
-    st.markdown("### 📂 Caricamento file in corso...")
-    load_bar = st.progress(0)
-    for i in range(100):
-        load_bar.progress(i + 1)
-        time.sleep(0.005)
-    load_bar.empty()
-    st.success("✅ File caricati correttamente.")
+    if st.button("🚀 Scarica ora"):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            total_files = len(uploaded_files)
+            for idx, file in enumerate(uploaded_files):
+                file_ext = file.name.split('.')[-1].lower()
+                temp_input = f"temp_{uuid.uuid4()}.{file_ext}"
 
-    if st.button("🚀 Avvia OCR"):
-        progress = st.progress(0)
-        status = st.empty()
-        preview = st.empty()
+                with open(temp_input, "wb") as f:
+                    f.write(file.read())
 
-        for idx, file in enumerate(uploaded_files):
-            file_ext = file.name.split('.')[-1].lower()
-            temp_input = f"temp_{uuid.uuid4()}.{file_ext}"
+                text = ""
+                images = []
 
-            with open(temp_input, "wb") as f:
-                f.write(file.read())
+                try:
+                    if file_ext == "pdf":
+                        images = convert_from_path(temp_input, dpi=200)
+                    else:
+                        img = Image.open(temp_input).convert("RGB")
+                        images = [img]
+                except UnidentifiedImageError:
+                    st.error(f"❌ Errore con il file: {file.name}")
+                    continue
 
-            text = ""
-            images = []
+                for i, img in enumerate(images):
+                    text += pytesseract.image_to_string(img)
 
-            try:
-                if file_ext == "pdf":
-                    images = convert_from_path(temp_input, dpi=200)
-                else:
-                    img = Image.open(temp_input).convert("RGB")
-                    images = [img]
-            except UnidentifiedImageError:
-                st.error(f"❌ Impossibile aprire il file: {file.name}")
-                continue
+                file_base = f"{uuid.uuid4()}"
 
-            total = len(images)
-            for i, img in enumerate(images):
-                text += pytesseract.image_to_string(img)
-                percent = int(((idx + i / total) / len(uploaded_files)) * 100)
-                progress.progress(percent)
-                status.info(f"🧠 Sto convertendo: {file.name} ({percent}%)")
-                preview.text(f"📄 Anteprima testo ({file.name}): {text[:500]}...")
+                if output_format == "PDF":
+                    output_filename = f"{file_base}.pdf"
+                    images[0].save(output_filename, save_all=True, append_images=images[1:])
+                elif output_format == "TXT":
+                    output_filename = f"{file_base}.txt"
+                    with open(output_filename, "w", encoding="utf-8") as f:
+                        f.write(text)
+                elif output_format == "DOCX":
+                    output_filename = f"{file_base}.docx"
+                    doc = Document()
+                    doc.add_paragraph(text)
+                    doc.save(output_filename)
 
-            file_base = f"{uuid.uuid4()}"
+                with open(output_filename, "rb") as f:
+                    zip_file.writestr(f"{file.name}_output.{output_filename.split('.')[-1]}", f.read())
 
-            if output_format == "PDF":
-                pdf_output = f"{file_base}.pdf"
-                images[0].save(pdf_output, save_all=True, append_images=images[1:])
-                with open(pdf_output, "rb") as f:
-                    st.download_button(f"📥 Scarica PDF per {file.name}", f, file_name=f"{file.name}_output.pdf")
-                os.remove(pdf_output)
+                os.remove(temp_input)
+                os.remove(output_filename)
 
-            elif output_format == "TXT":
-                txt_output = f"{file_base}.txt"
-                with open(txt_output, "w", encoding="utf-8") as f:
-                    f.write(text)
-                with open(txt_output, "rb") as f:
-                    st.download_button(f"📥 Scarica TXT per {file.name}", f, file_name=f"{file.name}_output.txt")
-                os.remove(txt_output)
+                st.progress(int((idx + 1) / total_files * 100))
 
-            elif output_format == "DOCX":
-                doc = Document()
-                doc.add_paragraph(text)
-                docx_output = f"{file_base}.docx"
-                doc.save(docx_output)
-                with open(docx_output, "rb") as f:
-                    st.download_button(f"📥 Scarica DOCX per {file.name}", f, file_name=f"{file.name}_output.docx")
-                os.remove(docx_output)
-
-            os.remove(temp_input)
-
-        progress.empty()
-        status.success("✅ Tutti i file elaborati con successo!")
-        preview.empty()
+        st.success("✅ File convertiti con successo!")
+        st.download_button("📦 Scarica ora", zip_buffer.getvalue(), file_name="risultati_ocr.zip")
