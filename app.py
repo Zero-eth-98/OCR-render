@@ -49,9 +49,7 @@ if uploaded_files:
             text += pytesseract.image_to_string(img)
             percent = int(((idx + i / total) / len(uploaded_files)) * 100)
             progress.progress(percent)
-            preview.text(f"📄 Anteprima testo ({file.name}):
-
-{text[:500]}...")
+            preview.text(f"📄 Anteprima testo ({file.name}):{text[:500]}...")
 
         file_base = f"{uuid.uuid4()}"
 
