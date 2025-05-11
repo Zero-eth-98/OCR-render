@@ -6,3 +6,4 @@ langdetect
 python-docx
 reportlab
 pillow
+uuid
